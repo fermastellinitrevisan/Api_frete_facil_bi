@@ -15,7 +15,7 @@ def get_firebird_connection(HOST: str, PORT: int, DATABASE: str):
             charset= "ISO8859_1"
         )
     except Exception as e:
-        raise HTTPException(status_code=501, detail=f"Erro ao conectar ao Firebird: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Erro ao conectar ao Firebird: {str(e)}")
 
 @contextmanager
 def firebird_connection_manager(HOST: str, PORT: int, DATABASE: str):
@@ -29,7 +29,7 @@ def firebird_connection_manager(HOST: str, PORT: int, DATABASE: str):
     except Exception as e:
         if conn:
             conn.rollback()
-        raise HTTPException(status_code=501, detail=f"Erro na operação Firebird: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Erro na operação Firebird: {str(e)}")
     finally:
         if cursor:
             cursor.close()

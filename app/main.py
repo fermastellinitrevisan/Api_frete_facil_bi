@@ -10,16 +10,14 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
     openapi_url="/openapi.json",
-    title="API Controle SoftCenter",
-    description="API para controle de usuários e empresas dos produtos SoftCenter",
+    title="API de integração BI-FreteFácil",
+    description="API para integração do BI-FreteFácil Softcenter",
     version="1.0.0",
     root_path="/sftlogin",  # Define o prefixo base para toda a API
 )
 
 
 app.add_middleware(AuditoriaMiddleware)
-app.include_router(usuarioRouter.router)
-app.include_router(empresaRouter.router)
 app.include_router(loginRouter.router)
 app.include_router(BIRouter.router)
 

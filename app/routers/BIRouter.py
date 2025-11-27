@@ -33,7 +33,7 @@ async def get_firebird_connection_data(idempresa: int):
 
 @router.post("/bi/big_numbers", tags=["BI"], response_model=List[BigNumbers], status_code=status.HTTP_200_OK)
 async def get_big_numbers(
-    consulta: FiltrosBI = FiltrosBI(),
+    consulta: FiltrosBI,
     token: str = Depends(oauth2_scheme)
 ):
 
@@ -231,7 +231,7 @@ async def get_big_numbers(
 
 @router.post('/bi/kpi_mes_ano', tags=["BI"], response_model=KPIMesAno, status_code=status.HTTP_200_OK)
 async def get_kpi_mes_ano(
-    consulta: FiltrosBI = FiltrosBI(),
+    consulta: FiltrosBI,
     token: str = Depends(oauth2_scheme)
 ):
     """
@@ -387,7 +387,7 @@ async def get_kpi_mes_ano(
 
 @router.post('/bi/kpi_dia_mes_atual', tags=["BI"], response_model=KPIDiaMesAtual, status_code=status.HTTP_200_OK)
 async def get_kpi_dia_mes_atual(
-    consulta: FiltrosBI = FiltrosBI(),
+    consulta: FiltrosBI,
     token: str = Depends(oauth2_scheme)
 ):
     """
@@ -404,7 +404,6 @@ async def get_kpi_dia_mes_atual(
     # Obtém os dados de conexão do Firebird
     conn_data = await get_firebird_connection_data(idempresa)
 
-    # Usa o context manager para gerenciar a conexão automaticamente
     with firebird_connection_manager(conn_data['ipbd'], conn_data['portabd'], conn_data['caminhobd']) as (con, cur):
         query = """
                 SELECT
@@ -413,7 +412,7 @@ async def get_kpi_dia_mes_atual(
                     SUM(embarques),
                     SUM(faturamento)
                 FROM
-                    (
+                (
                     SELECT
                         dia_emissao AS dia,
                         pesofrete_ton AS volume,
@@ -424,12 +423,13 @@ async def get_kpi_dia_mes_atual(
                         regiao,
                         mes_numero,
                         ano_emissao AS ano
-                FROM
-                    VWFRCTRC_BI
-                WHERE
-                    ano_emissao = EXTRACT(YEAR FROM CURRENT_TIMESTAMP)
-                    AND mes_numero = EXTRACT(MONTH FROM CURRENT_TIMESTAMP)
-                UNION ALL
+                    FROM
+                        VWFRCTRC_BI
+                    WHERE
+                        dataemissao >= ? AND dataemissao <= ?
+                    
+                    UNION ALL
+                    
                     SELECT
                         dia_recbto AS dia,
                         0 AS volume,
@@ -443,39 +443,37 @@ async def get_kpi_dia_mes_atual(
                     FROM
                         VWFACTRC_BI
                     WHERE
-                        ano_recbto = EXTRACT(YEAR FROM CURRENT_TIMESTAMP)
-                        AND mes_numero = EXTRACT(MONTH FROM CURRENT_TIMESTAMP)
+                       datavencto >= ? AND datavencto <= ?
                 ) dados
                 WHERE 1=1
-                GROUP BY
-                    dia
-                ORDER BY
-                    dia
+                GROUP BY dia
+                ORDER BY dia
         """
 
-        params = []
+        # Datas do filtro
+        data_fim = consulta.data_fim or date.today()
+        data_inicio = consulta.data_inicio or (data_fim - timedelta(days=30))
 
-        # Aplicar filtros no WHERE externo (após o UNION) - igual kpi_mes_ano
-        filtros_externos = ""
-        
+        # Os mesmos parâmetros serão usados nas 2 consultas do UNION
+        params = [data_inicio, data_fim, data_inicio, data_fim]
+
         # Normalizar filtros
+        filtros_externos = ""
+
         codfilial = normalize_filter(consulta.codfilial)
         codcid = normalize_filter(consulta.codcid)
         regiao = normalize_filter(consulta.regiao)
 
-        # Aplicar filtros por filial
         if codfilial:
             placeholders_filial = ', '.join(['?'] * len(codfilial))
             filtros_externos += f" AND codfilial IN ({placeholders_filial})"
             params.extend(codfilial)
 
-        # Aplicar filtros por cidade
         if codcid:
             placeholders_codcid = ', '.join(['?'] * len(codcid))
             filtros_externos += f" AND codcid IN ({placeholders_codcid})"
             params.extend(codcid)
 
-        # Aplicar filtros por região
         if regiao:
             placeholders_regiao = ', '.join(['?'] * len(regiao))
             filtros_externos += f" AND CAST(regiao AS VARCHAR(50)) IN ({placeholders_regiao})"
@@ -500,37 +498,28 @@ async def get_kpi_dia_mes_atual(
             params.extend(dia)
 
         # Inserir filtros no WHERE externo
-        query = query.replace(
-            "WHERE 1=1",
-            f"WHERE 1=1{filtros_externos}"
-        )
+        query = query.replace("WHERE 1=1", f"WHERE 1=1{filtros_externos}")
 
         cur.execute(query, tuple(params))
 
-        # Dicionário para armazenar os dados organizados por dia
         dados = {}
-
         for row in cur.fetchall():
             dia = str(int(row[0])) if row[0] is not None else "0"
             volume = float(row[1]) if row[1] is not None else 0.0
             embarques = int(row[2]) if row[2] is not None else 0
             faturamento = float(row[3]) if row[3] is not None else 0.0
             
-            # Adiciona os dados do dia
             dados[dia] = DadosDiaMesAtual(
                 volume=volume,
                 embarques=embarques,
                 faturamento=faturamento
             )
 
-        if not dados:
-            return {}
-        
-        return dados
+        return dados or {}
 
 @router.post("/bi/kpi_filial", tags=["BI"], response_model=KPIFilial, status_code=status.HTTP_200_OK)
 async def get_kpi_filial(
-    consulta: FiltrosBI = FiltrosBI(),
+    consulta: FiltrosBI,
     token: str = Depends(oauth2_scheme)
 ):
 
@@ -706,7 +695,7 @@ async def get_kpi_filial(
 
 @router.post("/bi/kpi_regiao", tags=["BI"], response_model=KPIRegiao, status_code=status.HTTP_200_OK)
 async def get_kpi_regiao(
-    consulta: FiltrosBI = FiltrosBI(),
+    consulta: FiltrosBI,
     token: str = Depends(oauth2_scheme)
 ):
 
@@ -876,7 +865,7 @@ async def get_kpi_regiao(
 
 @router.post("/bi/kpi_cidade", tags=["BI"], response_model=KPICidade, status_code=status.HTTP_200_OK)
 async def get_kpi_cidade(
-    consulta: FiltrosBI = FiltrosBI(),
+    consulta: FiltrosBI,
     token: str = Depends(oauth2_scheme)
 ):
 
@@ -1036,7 +1025,7 @@ async def get_kpi_cidade(
 
 @router.post("/bi/kpi_cliente", tags=["BI"], response_model=KPICliente, status_code=status.HTTP_200_OK)
 async def get_kpi_cliente(
-    consulta: FiltrosBI = FiltrosBI(),
+    consulta: FiltrosBI,
     token: str = Depends(oauth2_scheme)
 ):
 
@@ -1154,7 +1143,7 @@ async def get_kpi_cliente(
 
 @router.post("/bi/kpi_produto", tags=["BI"], response_model=KPIProduto, status_code=status.HTTP_200_OK)
 async def get_kpi_produto(
-    consulta: FiltrosBI = FiltrosBI(),
+    consulta: FiltrosBI,
     token: str = Depends(oauth2_scheme)
 ):
 
@@ -1269,9 +1258,11 @@ async def get_kpi_produto(
         
         return dados
 
-@router.post("/bi/tabela_faturamento", tags=["BI"], response_model=List[TabelaFaturamento], status_code=status.HTTP_200_OK)
+@router.post("/bi/tabela_faturamento", tags=["BI"], 
+            response_model=List[TabelaFaturamento], 
+             status_code=status.HTTP_200_OK)
 async def get_tabela_faturamento(
-    consulta: FiltrosBI = FiltrosBI(),
+    consulta: FiltrosBI,
     token: str = Depends(oauth2_scheme)
 ):
 
@@ -1472,7 +1463,7 @@ async def get_filtro_cliente(
 
 @router.post("/bi/big_numbers_contas_receber", tags=["BI"], response_model=List[BigNumbersContasReceber], status_code=status.HTTP_200_OK)
 async def get_big_numbers_contas_receber(
-    consulta: FiltrosBI = FiltrosBI(),
+    consulta: FiltrosBI,
     token: str = Depends(oauth2_scheme)
 ):
 
@@ -1519,7 +1510,7 @@ async def get_big_numbers_contas_receber(
         query_faturamento = f"""
             SELECT COALESCE(SUM(vlrrecbto), 0) AS faturamento
             FROM VWFACTRC_BI
-            WHERE datarecbto >= ? AND datarecbto <= ?{filtros_adicionais}
+            WHERE DATARECBTO >= ? AND DATARECBTO <= ?{filtros_adicionais}
         """
         params_faturamento = [data_inicio, data_fim] + params_filtros
 
@@ -1527,8 +1518,8 @@ async def get_big_numbers_contas_receber(
         query_a_receber = f"""
             SELECT COALESCE(SUM(vlrsaldo), 0) AS a_receber
             FROM VWFACTRC_BI
-            WHERE condicao_fatura = 'A Receber'
-              AND datavencto >= ? AND datavencto <= ?{filtros_adicionais}
+              WHERE condicao_fatura = 'A Receber'
+              and datavencto >= ? AND datavencto <= ?{filtros_adicionais}
         """
         params_a_receber = [data_inicio, data_fim] + params_filtros
 
@@ -1536,15 +1527,16 @@ async def get_big_numbers_contas_receber(
         query_em_atraso = f"""
             SELECT COALESCE(SUM(vlrsaldo), 0) AS em_atraso
             FROM VWFACTRC_BI
-            WHERE condicao_fatura = 'Em Atraso'{filtros_adicionais}
+            WHERE condicao_fatura = 'Em Atraso'
+            and datavencto >= ? AND datavencto <= ?{filtros_adicionais}
         """
-        params_em_atraso = params_filtros
+        params_em_atraso = [data_inicio, data_fim] + params_filtros
 
         # 4. PRAZO MÉDIO: Filtrado por período de recebimento
         query_prazo_medio = f"""
             SELECT COALESCE(AVG(dias_recebimento), 0) AS prazo_medio
             FROM VWFACTRC_BI
-            WHERE datarecbto >= ? AND datarecbto <= ?
+            WHERE datavencto >= ? AND datavencto <= ?
               AND dias_recebimento IS NOT NULL{filtros_adicionais}
         """
         params_prazo_medio = [data_inicio, data_fim] + params_filtros
@@ -1577,102 +1569,88 @@ async def get_big_numbers_contas_receber(
 
 @router.post('/bi/recebimentos_dia_mes_atual', tags=["BI"], response_model=RecebimentosDiaMesAtual, status_code=status.HTTP_200_OK)
 async def get_recebimentos_dia_mes_atual(
-    consulta: FiltrosBI = FiltrosBI(),
+    consulta: FiltrosBI,
     token: str = Depends(oauth2_scheme)
 ):
     """
     Consulta Grafico dia e mes atual de recebimentos usando POST com schema de entrada.
     Permite consultas mais complexas no futuro.
     """
-    # Verifica o token
     payload = decode_access_token(token)
     idempresa = payload.get("empresa")
 
     if not idempresa:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="ID da empresa não encontrado no token")
-    
-    # Obtém os dados de conexão do Firebird
+
     conn_data = await get_firebird_connection_data(idempresa)
 
-    # Usa o context manager para gerenciar a conexão automaticamente
     with firebird_connection_manager(conn_data['ipbd'], conn_data['portabd'], conn_data['caminhobd']) as (con, cur):
         query = """
-                    SELECT
-                        dia,
-                        SUM(faturamento),
-                        SUM(a_receber)
-                    FROM
-                        (
-                        SELECT
-                            dia_recbto AS dia,
-                            vlrrecbto AS faturamento,
-                            0 AS a_receber,
-                            codfilial,
-                            codcliente
-                        FROM
-                            VWFACTRC_BI
-                        WHERE
-                            ano_recbto = EXTRACT(YEAR FROM CURRENT_TIMESTAMP)
-                            AND mes_numero = EXTRACT(MONTH FROM CURRENT_TIMESTAMP)
-                    UNION ALL
-                        SELECT
-                            dia_vencto AS dia,
-                            0 AS faturamento,
-                            vlrsaldo AS a_receber,
-                            codfilial,
-                            codcliente
-                        FROM
-                            VWFACTRC_BI
-                        WHERE
-                            ano_vencto = EXTRACT(YEAR FROM CURRENT_TIMESTAMP)
-                            AND mes_numero_vencto = EXTRACT(MONTH FROM CURRENT_TIMESTAMP)
-                            AND condicao_fatura = 'A Receber'
-                    ) dados
-                    WHERE 1=1
-                    GROUP BY
-                        dia
-                    ORDER BY
-                        dia
+            SELECT
+                dia,
+                SUM(faturamento),
+                SUM(a_receber)
+            FROM
+                (
+                SELECT
+                    dia_recbto AS dia,
+                    vlrrecbto AS faturamento,
+                    0 AS a_receber,
+                    codfilial,
+                    codcliente
+                FROM
+                    VWFACTRC_BI
+                WHERE
+                     datarecbto >= ? AND datarecbto <= ?
+            UNION ALL
+                SELECT
+                    dia_vencto AS dia,
+                    0 AS faturamento,
+                    vlrsaldo AS a_receber,
+                    codfilial,
+                    codcliente
+                FROM
+                    VWFACTRC_BI
+                WHERE
+                    datavencto >= ? AND datavencto <= ?
+                    AND condicao_fatura = 'A Receber'
+            ) dados
+            WHERE 1=1
+            GROUP BY
+                dia
+            ORDER BY
+                dia
         """
 
-        params = []
+        # ✅ Passar datetime.date (sem converter para string)
+        data_fim = consulta.data_fim or date.today()
+        data_inicio = consulta.data_inicio or (data_fim - timedelta(days=30))
+        params = [data_inicio, data_fim, data_inicio, data_fim]
 
-        # Aplicar filtros no WHERE externo (após o UNION) - igual kpi_mes_ano
         filtros_externos = ""
-        
-        # Normalizar filtros
         codfilial = normalize_filter(consulta.codfilial)
         codcliente = normalize_filter(consulta.codcliente)
 
-        # Aplicar filtros por filial
         if codfilial:
             placeholders_filial = ', '.join(['?'] * len(codfilial))
             filtros_externos += f" AND codfilial IN ({placeholders_filial})"
             params.extend(codfilial)
 
-        # Aplicar filtros por cliente
         if codcliente:
             placeholders_codcliente = ', '.join(['?'] * len(codcliente))
             filtros_externos += f" AND codcliente IN ({placeholders_codcliente})"
             params.extend(codcliente)
 
-        # Inserir filtros no WHERE externo
-        query = query.replace(
-            "WHERE 1=1",
-            f"WHERE 1=1{filtros_externos}"
-        )
+        query = query.replace("WHERE 1=1", f"WHERE 1=1{filtros_externos}")
 
+        # ✅ Executa com datetime.date
         cur.execute(query, tuple(params))
 
-        # Dicionário para armazenar os dados organizados por dia
         dados = {}
-
         for row in cur.fetchall():
             dia = str(int(row[0])) if row[0] is not None else "0"
             faturamento = float(row[1]) if row[1] is not None else 0.0
             a_receber = float(row[2]) if row[2] is not None else 0.0
-            
-            # Adiciona os dados do dia
             dados[dia] = DadosRecebimentosDiaMesAtual(
                 faturamento=faturamento,
                 a_receber=a_receber
@@ -1680,12 +1658,12 @@ async def get_recebimentos_dia_mes_atual(
 
         if not dados:
             return {}
-        
+
         return dados
 
 @router.post("/bi/a_receber_cliente", tags=["BI"], response_model=AReceberCliente, status_code=status.HTTP_200_OK)
 async def get_a_receber_cliente(
-    consulta: FiltrosBI = FiltrosBI(),
+    consulta: FiltrosBI,
     token: str = Depends(oauth2_scheme)
 ):
 
@@ -1707,14 +1685,14 @@ async def get_a_receber_cliente(
     with firebird_connection_manager(conn_data['ipbd'], conn_data['portabd'], conn_data['caminhobd']) as (con, cur):
 
         # ← AQUI usa os campos do schema
-        data_fim = consulta.data_fim or date.today()
-        data_inicio = consulta.data_inicio or (data_fim - timedelta(days=30))
+        data_fim = consulta.data_fim #or date.today()
+        data_inicio = consulta.data_inicio #or (data_fim - timedelta(days=30))
 
         # Construir filtros adicionais para aplicar nas queries
         filtros_adicionais_a_receber = ""
         filtros_adicionais_em_atraso = ""
         params_a_receber = [data_inicio, data_fim]
-        params_em_atraso = []
+        params_em_atraso = [data_inicio, data_fim]
         
         # Normalizar filtros
         codfilial = normalize_filter(consulta.codfilial)
@@ -1761,7 +1739,7 @@ async def get_a_receber_cliente(
                     datavencto
                 FROM
                     VWFACTRC_BI
-                WHERE condicao_fatura = 'Em Atraso'{filtros_adicionais_em_atraso}
+                WHERE condicao_fatura = 'Em Atraso' AND datavencto >= ? AND datavencto <= ? {filtros_adicionais_em_atraso}
             ) dados
             GROUP BY
                 codcliente,
@@ -1796,7 +1774,7 @@ async def get_a_receber_cliente(
 
 @router.post("/bi/tabela_a_receber", tags=["BI"], response_model=List[TabelaAReceber], status_code=status.HTTP_200_OK)
 async def get_tabela_a_receber(
-    consulta: FiltrosBI = FiltrosBI(),
+    consulta: FiltrosBI,
     token: str = Depends(oauth2_scheme)
 ):
 
@@ -1990,7 +1968,7 @@ async def get_filtro_transacao(
 
 @router.post("/bi/big_numbers_contas_pagar", tags=["BI"], response_model=List[BigNumbersContasPagar], status_code=status.HTTP_200_OK)
 async def get_big_numbers_contas_pagar(
-    consulta: FiltrosBI = FiltrosBI(),
+    consulta: FiltrosBI,
     token: str = Depends(oauth2_scheme)
 ):
 
@@ -2012,8 +1990,8 @@ async def get_big_numbers_contas_pagar(
     with firebird_connection_manager(conn_data['ipbd'], conn_data['portabd'], conn_data['caminhobd']) as (con, cur):
 
         # ← AQUI usa os campos do schema
-        data_fim = consulta.data_fim or date.today()
-        data_inicio = consulta.data_inicio or (data_fim - timedelta(days=30))
+        data_fim = consulta.data_fim #or date.today()
+        data_inicio = consulta.data_inicio #or (data_fim - timedelta(days=30))
 
         # Normalizar filtros para aplicar em todas as queries
         codfornecedor = normalize_filter(consulta.codfornecedor)
@@ -2038,7 +2016,7 @@ async def get_big_numbers_contas_pagar(
             SELECT
 	            COALESCE(SUM(vlrpago), 0) AS pago
             FROM vwcptit_bi
-            WHERE datamovto >= ? AND datamovto <= ?{filtros_adicionais}
+            WHERE DATAVENCTO >= ? AND DATAVENCTO <= ?{filtros_adicionais}
         """
         params_pago = [data_inicio, data_fim] + params_filtros
 
@@ -2056,9 +2034,10 @@ async def get_big_numbers_contas_pagar(
         query_em_atraso = f"""
             SELECT COALESCE(SUM(vlrsaldo), 0) AS em_atraso
             FROM vwcptit_bi
-            WHERE condicao_fatura = 'Em Atraso'{filtros_adicionais}
+            WHERE condicao_fatura = 'Em Atraso'
+            AND datavencto >= ? AND datavencto <= ?{filtros_adicionais}
         """
-        params_em_atraso = params_filtros
+        params_em_atraso = [data_inicio, data_fim] + params_filtros
 
         # Executar queries separadamente
         cur.execute(query_pago, tuple(params_pago))
@@ -2084,7 +2063,7 @@ async def get_big_numbers_contas_pagar(
 
 @router.post('/bi/contas_pagar_dia_mes_atual', tags=["BI"], response_model=ContasPagarDiaMesAtual, status_code=status.HTTP_200_OK)
 async def get_contas_pagar_dia_mes_atual(
-    consulta: FiltrosBI = FiltrosBI(),
+    consulta: FiltrosBI,
     token: str = Depends(oauth2_scheme)
 ):
     """
@@ -2119,8 +2098,7 @@ async def get_contas_pagar_dia_mes_atual(
                         FROM
                             VWCPTIT_BI
                         WHERE
-                            ano_movto = EXTRACT(YEAR FROM CURRENT_TIMESTAMP)
-                            AND mes_numero_movto = EXTRACT(MONTH FROM CURRENT_TIMESTAMP)
+                           DATAVENCTO >= ? AND DATAVENCTO <= ?
                     UNION ALL
                         SELECT
                             dia_vencto AS dia,
@@ -2131,8 +2109,7 @@ async def get_contas_pagar_dia_mes_atual(
                         FROM
                             VWCPTIT_BI
                         WHERE
-                            ano_vencto = EXTRACT(YEAR FROM CURRENT_TIMESTAMP)
-                            AND mes_numero_vencto = EXTRACT(MONTH FROM CURRENT_TIMESTAMP)
+                            DATAVENCTO  >= ? AND DATAVENCTO <= ?
                             AND condicao_fatura = 'A Pagar'
                     ) dados
                     WHERE 1=1
@@ -2143,6 +2120,13 @@ async def get_contas_pagar_dia_mes_atual(
         """
 
         params = []
+
+        # Datas de referência
+        data_fim = consulta.data_fim or date.today()
+        data_inicio = consulta.data_inicio or (data_fim - timedelta(days=30))
+
+        # Define parâmetros (usados nas 2 partes do UNION)
+        params = [data_inicio, data_fim, data_inicio, data_fim]
 
         # Aplicar filtros no WHERE externo (após o UNION) - igual kpi_mes_ano
         filtros_externos = ""
@@ -2190,9 +2174,9 @@ async def get_contas_pagar_dia_mes_atual(
         
         return dados
 
-@router.post("/bi/a_pagar_fornecedor", tags=["BI"], response_model=APagarFornecedor, status_code=status.HTTP_200_OK)
+@router.post("/bi/a_pagar_fornecedor", tags=["BI"], status_code=status.HTTP_200_OK)
 async def get_a_pagar_fornecedor(
-    consulta: FiltrosBI = FiltrosBI(),
+    consulta: FiltrosBI,
     token: str = Depends(oauth2_scheme)
 ):
 
@@ -2213,15 +2197,27 @@ async def get_a_pagar_fornecedor(
     # Usa o context manager para gerenciar a conexão automaticamente
     with firebird_connection_manager(conn_data['ipbd'], conn_data['portabd'], conn_data['caminhobd']) as (con, cur):
 
-        # ← AQUI usa os campos do schema
-        data_fim = consulta.data_fim or date.today()
-        data_inicio = consulta.data_inicio or (data_fim - timedelta(days=30))
+        if consulta.data_fim:
+            data_fim = consulta.data_fim
+        else:
+            # ← AQUI usa os campos do schema
+            data_fim = consulta.data_fim or date.today()    
 
+        if consulta.data_inicio:
+            data_inicio = consulta.data_inicio
+        else:        
+            data_inicio = consulta.data_inicio or (data_fim - timedelta(days=30))
+
+        print(data_fim)
+        print(data_inicio)    
+
+       
+        
         # Construir filtros adicionais para aplicar nas queries
         filtros_adicionais_a_pagar = ""
         filtros_adicionais_em_atraso = ""
         params_a_pagar = [data_inicio, data_fim]
-        params_em_atraso = []
+        params_em_atraso = [data_inicio, data_fim]
         
         # Normalizar filtros
         codfornecedor = normalize_filter(consulta.codfornecedor)
@@ -2232,7 +2228,7 @@ async def get_a_pagar_fornecedor(
             placeholders_fornecedor = ', '.join(['?'] * len(codfornecedor))
             filtros_adicionais_a_pagar += f" AND codfornecedor IN ({placeholders_fornecedor})"
             filtros_adicionais_em_atraso += f" AND codfornecedor IN ({placeholders_fornecedor})"
-            params_a_pagar.extend(codfornecedor)
+            params_a_pagar.extend(codfornecedor) # type: ignore
             params_em_atraso.extend(codfornecedor)
 
         # Aplicar filtros por transacao
@@ -2240,7 +2236,7 @@ async def get_a_pagar_fornecedor(
             placeholders_transacao = ', '.join(['?'] * len(codtransacao))
             filtros_adicionais_a_pagar += f" AND codtransacao IN ({placeholders_transacao})"
             filtros_adicionais_em_atraso += f" AND codtransacao IN ({placeholders_transacao})"
-            params_a_pagar.extend(codtransacao)
+            params_a_pagar.extend(codtransacao) # type: ignore
             params_em_atraso.extend(codtransacao)
 
         query= f"""
@@ -2258,17 +2254,17 @@ async def get_a_pagar_fornecedor(
                         datavencto
                     FROM
                         VWCPTIT_BI
-                    WHERE condicao_fatura = 'A Pagar' AND datavencto >= ? AND datavencto <= ?{filtros_adicionais_a_pagar}
+                    WHERE DATAVENCTO >= ? AND DATAVENCTO <= ?{filtros_adicionais_a_pagar}
                 UNION ALL
                     SELECT
                         fornecedor,
-                        vlrsaldo,
+                        vlrpago,
                         codfornecedor,
                         codtransacao,
                         datavencto
                     FROM
                         VWCPTIT_BI
-                    WHERE condicao_fatura = 'Em Atraso'{filtros_adicionais_em_atraso}
+                    WHERE  DATAVENCTO >= ? AND DATAVENCTO <= ?{filtros_adicionais_em_atraso}
                             ) dados
                 GROUP BY
                     codfornecedor,
@@ -2279,7 +2275,8 @@ async def get_a_pagar_fornecedor(
 
         params = params_a_pagar + params_em_atraso
 
-
+        # WHERE condicao_fatura = 'A Pagar' AND DATAVENCTO >= ? AND DATAVENCTO <= ?{filtros_adicionais_a_pagar}
+        # WHERE condicao_fatura = 'Em Atraso' AND DATAVENCTO >= ? AND DATAVENCTO <= ?{filtros_adicionais_em_atraso}
         cur.execute(query, tuple(params))
 
                 # Dicionário para armazenar os dados organizados por cliente
@@ -2292,18 +2289,23 @@ async def get_a_pagar_fornecedor(
             
             # Adiciona os dados do cliente
             dados[codfornecedor] = DadosAPagarFornecedor(
-                fornecedor=fornecedor,
+                fornecedor=fornecedor, # type: ignore
                 a_pagar=a_pagar
             )
 
+        print('aqui')
+
         if not dados:
             return {}
+       
         
         return dados
 
-@router.post("/bi/tabela_a_pagar", tags=["BI"], response_model=List[TabelaAPagar], status_code=status.HTTP_200_OK)
+@router.post("/bi/tabela_a_pagar", tags=["BI"], 
+            #  response_model=List[TabelaAPagar], 
+             status_code=status.HTTP_200_OK)
 async def get_tabela_a_pagar(
-    consulta: FiltrosBI = FiltrosBI(),
+    consulta: FiltrosBI,
     token: str = Depends(oauth2_scheme)
 ):
 

@@ -7,21 +7,21 @@ from datetime import date
 class FiltrosBI(BaseModel):
     data_inicio: Optional[date] = None
     data_fim: Optional[date] = None
-    ano: Optional[Union[List[int], int]] = Field(None, description="Ano")
-    mes: Optional[Union[List[int], int]] = Field(None, description="Mês")
-    dia: Optional[Union[List[int], int]] = Field(None, description="Dia")
+    ano: Optional[Union[int, int]] = Field(None, description="Ano")
+    mes: Optional[Union[int, int]] = Field(None, description="Mês")
+    dia: Optional[Union[int, int]] = Field(None, description="Dia")
     
     # Filtros por código (aceita valor único ou lista)
-    codfilial: Optional[Union[List[int], int]] = Field(None, description="Código(s) da filial")
-    codcliente: Optional[Union[List[str], str]] = Field(None, description="Código(s) do cliente")
-    codcid: Optional[Union[List[int], int]] = Field(None, description="Código(s) da cidade (int)")
-    codpro: Optional[Union[List[int], int]] = Field(None, description="Código(s) do produto")
+    codfilial: Optional[Union[int, int]] = Field(None, description="Código(s) da filial")
+    codcliente: Optional[Union[str, str]] = Field(None, description="Código(s) do cliente")
+    codcid: Optional[Union[int, int]] = Field(None, description="Código(s) da cidade (int)")
+    codpro: Optional[Union[int, int]] = Field(None, description="Código(s) do produto")
     
-    regiao: Optional[Union[List[str], str]] = Field(None, description="Nome(s) da região")
+    regiao: Optional[Union[str, str]] = Field(None, description="Nome(s) da região")
 
     # Filtros cptit
-    codfornecedor: Optional[Union[List[str], str]] = Field(None, description="Código(s) do fornecedor")
-    codtransacao: Optional[Union[List[int], int]] = Field(None, description="Código(s) da transação")
+    codfornecedor: Optional[Union[str, str]] = Field(None, description="Código(s) do fornecedor")
+    codtransacao: Optional[Union[int, int]] = Field(None, description="Código(s) da transação")
 
 # Schema para resposta (saída) 
 class BigNumbers(BaseModel):
@@ -178,9 +178,10 @@ class ContasPagarDiaMesAtual(RootModel[Dict[str, DadosContasPagarDiaMesAtual]]):
 class DadosAPagarFornecedor(BaseModel):
     fornecedor: str
     a_pagar: float
+
 # Schema para a estrutura aninhada por dia
-class APagarFornecedor(RootModel[Dict[str, DadosAPagarFornecedor]]):
-    pass
+# class APagarFornecedor(RootModel[Dict[str, DadosAPagarFornecedor]]):
+    # pass
 
 class TabelaAPagar(BaseModel):
     datavencto: date

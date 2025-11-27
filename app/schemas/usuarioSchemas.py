@@ -40,8 +40,9 @@ class UsuarioLoginRet(BaseModel):
 
 #modelo de Body para Login de Usuarios
 class UsuarioLogin(BaseModel):
-    cpfusuario: str
-    senhausuario: str
+    username:str
+    # cpfusuario: str
+    password: str
     class Config:
         orm_mode = True       
 
