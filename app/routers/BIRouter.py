@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from urllib.request import Request
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from datetime import date, timedelta
 from typing import List
 from fastapi.security import OAuth2PasswordBearer 
@@ -33,7 +34,8 @@ async def get_firebird_connection_data(idempresa: int):
 
 @router.post("/bi/big_numbers", tags=["BI"], response_model=List[BigNumbers], status_code=status.HTTP_200_OK)
 async def get_big_numbers(
-    consulta: FiltrosBI = FiltrosBI(),
+    request: Request,
+    consulta: FiltrosBI,
     token: str = Depends(oauth2_scheme)
 ):
 
@@ -231,7 +233,7 @@ async def get_big_numbers(
 
 @router.post('/bi/kpi_mes_ano', tags=["BI"], response_model=KPIMesAno, status_code=status.HTTP_200_OK)
 async def get_kpi_mes_ano(
-    consulta: FiltrosBI = FiltrosBI(),
+    consulta: FiltrosBI,
     token: str = Depends(oauth2_scheme)
 ):
     """

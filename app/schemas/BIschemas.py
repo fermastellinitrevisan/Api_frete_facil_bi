@@ -10,6 +10,9 @@ class FiltrosBI(BaseModel):
     ano: Optional[Union[List[int], int]] = Field(None, description="Ano")
     mes: Optional[Union[List[int], int]] = Field(None, description="Mês")
     dia: Optional[Union[List[int], int]] = Field(None, description="Dia")
+    ano: Optional[Union[int, int]] = Field(None, description="Ano")
+    mes: Optional[Union[int, int]] = Field(None, description="Mês")
+    dia: Optional[Union[int, int]] = Field(None, description="Dia")
     
     # Filtros por código (aceita valor único ou lista)
     codfilial: Optional[Union[List[int], int]] = Field(None, description="Código(s) da filial")
@@ -19,9 +22,14 @@ class FiltrosBI(BaseModel):
     
     regiao: Optional[Union[List[str], str]] = Field(None, description="Nome(s) da região")
 
+<<<<<<< Updated upstream
     # Filtros cptit
     codfornecedor: Optional[Union[List[str], str]] = Field(None, description="Código(s) do fornecedor")
     codtransacao: Optional[Union[List[int], int]] = Field(None, description="Código(s) da transação")
+=======
+    class Config:
+        orm_mode = True  
+>>>>>>> Stashed changes
 
 # Schema para resposta (saída) 
 class BigNumbers(BaseModel):

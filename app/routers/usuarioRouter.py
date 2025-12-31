@@ -10,6 +10,7 @@ from fastapi.security import OAuth2PasswordBearer
 from app.utils.util import ValidaCPF
 
 
+
 router = APIRouter()
 
 # Recurso para autenticação com token (OAuth2)
